@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Update</title>
+    </head>
+    <h1>Update system</h1>
+    <p>This system was not intended for students, it provides a very raw interface for updating the DIYgm code and can break the system. Proceed at your own risk. Contact your IA if you have any questions</p>
+    <p>If you update the python file, the program will force a restart</p>
+
+    <div>
+        <p>File to be updated:</p>
+        <input id="send" type="file">
+        <button type="submit" id="submit">Submit</button>
+        <p id="result"></p>
+    </div>
+    <div>
+        <p>Change host name:</p>
+        <input type="text" id="host">
+        <button id="hostname">Submit</button>
+    </div>
+    <script>
+        document.getElementById("hostname").addEventListener('click', e => {
+            xhttp.open('POST', 'host', true);
+            xhttp.send(document.getElementById("host").value);
+        });
+        document.getElementById("submit").addEventListener('click', e => {
+            filename = document.getElementById("send").files[0].name;
+
+            const files = document.getElementById("send").files;
+
+            xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function() {
+                if (this.readyState == 4 && this.status == 200) {
+                    document.getElementById("result").innerText = "Transfer Completed!"
+                }
+            }
+
+            xhttp.open('POST', 'update/' + filename, true);
+            xhttp.setRequestHeader("content-type", "binary/octet-stream");
+            xhttp.send(files[0]);
+        });
+    </script>
+</html>

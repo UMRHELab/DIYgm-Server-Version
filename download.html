@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Download Logs</title>
+        <style>
+            html {
+                font-family: sans-serif;
+            }
+            #logs {
+                margin: auto;
+                width: 75%;
+            }
+            div div {
+                padding: 1vh 0vw;
+            }
+            button {
+                margin-left: 2vw;
+                margin-right: 1vw;
+                appearance: none;
+                background-color: #2ea44f;
+                border: 1px solid rgba(27, 31, 35, .15);
+                border-radius: 6px;
+                box-shadow: rgba(27, 31, 35, .1) 0 1px 0;
+                box-sizing: border-box;
+                color: #fff;
+                cursor: pointer;
+                display: inline-block;
+                font-family: -apple-system,system-ui,"Segoe UI",Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";
+                font-size: 14px;
+                font-weight: 600;
+                line-height: 20px;
+                padding: 6px 16px;
+                position: relative;
+                text-align: center;
+                text-decoration: none;
+                user-select: none;
+                -webkit-user-select: none;
+                touch-action: manipulation;
+                vertical-align: middle;
+                white-space: nowrap;
+            }
+            button:focus:not(:focus-visible):not(.focus-visible) {
+            box-shadow: none;
+            outline: none;
+            }
+            button:hover {
+            background-color: #2c974b;
+            }
+
+            button:focus {
+            box-shadow: rgba(46, 164, 79, .4) 0 0 0 3px;
+            outline: none;
+            }
+
+            button:disabled {
+            background-color: #94d3a2;
+            border-color: rgba(27, 31, 35, .1);
+            color: rgba(255, 255, 255, .8);
+            cursor: default;
+            }
+
+            button:active {
+            background-color: #298e46;
+            box-shadow: rgba(20, 70, 32, .2) 0 1px 0 inset;
+            }
+            
+            .delete {
+                background-color: #DD2222;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="logs">
+            <h2>Logs:</h2>
+        </div>
+        <iframe id="download" style="display:none;"></iframe>
+    </body>
+    <script>
+        function downloadlog(event) {
+            var xhttp = new XMLHttpRequest();
+            var name = event.currentTarget.name;
+            xhttp.onreadystatechange = function() {
+                if (this.readyState == 4 && this.status == 200) { 
+                    var temp = document.createElement("a");
+                    document.body.appendChild(temp);
+                    document.style = "display: none";
+
+                    var blob = new Blob([this.responseText], {type: 'text/csv;charset=utf-8'});
+                    var link=window.URL.createObjectURL(blob);
+
+                    temp.href = link;
+                    temp.download = name;
+                    temp.click();
+                    window.URL.revokeObjectURL(link);
+                }
+            }
+            xhttp.open("POST", '/logs/' + name, true);
+            xhttp.send();
+        }
+
+        function deletelog(event) {
+            confirmed = confirm("Please confirm delete");
+            if (confirmed) {
+                var xhttp = new XMLHttpRequest();
+                xhttp.onreadystatechange = function() {
+                    if (this.readyState == 4 && this.status == 200) { 
+                        location.reload();
+                    }
+                }
+                xhttp.open("POST", '/logs/delete/' + event.currentTarget.name, true);
+                xhttp.send();
+            }
+        }
+
+        function refresh() {
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function() {
+                if (this.readyState == 4 && this.status == 200) {
+                    response = JSON.parse(this.responseText);
+
+                    for (var i = 0; i < response.logs.length; i++) {
+                        elem = document.createElement('div');
+                        elem.id = i;
+                        elem.appendChild(document.createTextNode(i + ": " + response.logs[i]));
+
+                        downloadbutton = document.createElement("button");
+                        downloadbutton.name = response.logs[i];
+                        downloadbutton.addEventListener("click", downloadlog)
+                        var text = document.createTextNode("Download");
+                        downloadbutton.appendChild(text);
+
+                        deleteButton = document.createElement("button");
+                        deleteButton.name = response.logs[i];
+                        deleteButton.addEventListener("click", deletelog)
+                        text = document.createTextNode("Delete");
+                        deleteButton.classList.add("delete");
+                        deleteButton.appendChild(text);
+
+                        elem.appendChild(downloadbutton);
+                        elem.appendChild(deleteButton);
+                        
+                        document.getElementById("logs").appendChild(elem);
+                    }
+                }
+            };
+            xhttp.open("POST", "logs", true);
+            xhttp.send();
+        }
+        refresh();
+    </script>
+</html>

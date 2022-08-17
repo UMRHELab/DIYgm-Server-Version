@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        
+        <title>DIYgn Data</title>
+        <style>
+            html {
+                background-color: #efefef;
+            }
+            .measurement {
+                font-family: sans-serif;
+                margin: 5vh auto;
+                width: 75%;
+                font-size: 3vh;
+                border: 1px solid #aaaaaa;
+                border-radius: 3%;
+                background-color: #ffffff;
+                padding: .25vh 1vw;
+            }
+            h3 {
+                font-weight: normal;
+                font-size: 7vh;
+                padding: 0;
+                margin: 0;
+            }
+            input {
+                width: 3vh;
+                height: 3vh;
+            }
+            .logging {
+                width: 75%;
+                margin: auto;
+            }
+
+            .logging button {
+            appearance: none;
+            background-color: #2ea44f;
+            border: 1px solid rgba(27, 31, 35, .15);
+            border-radius: 6px;
+            box-shadow: rgba(27, 31, 35, .1) 0 1px 0;
+            box-sizing: border-box;
+            color: #fff;
+            cursor: pointer;
+            display: inline-block;
+            font-family: -apple-system,system-ui,"Segoe UI",Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 20px;
+            padding: 6px 16px;
+            position: relative;
+            text-align: center;
+            text-decoration: none;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            vertical-align: middle;
+            white-space: nowrap;
+            }
+
+            .logging button:focus:not(:focus-visible):not(.focus-visible) {
+            box-shadow: none;
+            outline: none;
+            }
+            .logging button:hover {
+            background-color: #2c974b;
+            }
+
+            .logging button:focus {
+            box-shadow: rgba(46, 164, 79, .4) 0 0 0 3px;
+            outline: none;
+            }
+
+            .logging button:disabled {
+            background-color: #94d3a2;
+            border-color: rgba(27, 31, 35, .1);
+            color: rgba(255, 255, 255, .8);
+            cursor: default;
+            }
+
+            .logging button:active {
+            background-color: #298e46;
+            box-shadow: rgba(20, 70, 32, .2) 0 1px 0 inset;
+            }
+
+            #end {
+                background-color: #DD2222;
+            }
+            #end:disabled {
+                background-color: #AAAAAA;
+            }
+            .system {
+                background-color: #DD2222 !important;
+            }
+            #systembuttons {
+                margin-left: 5vw;
+            }
+        </style>
+    </head>
+    
+    <body>
+        <div class="logging">
+            <button onclick="startLogging()" id="start">Start Logging</button>
+            <button onclick="stopLogging(false)" id="end" disabled="disabled">End Logging</button>
+            <button onclick="redirect()">Download Logs</button>
+            <span id="systembuttons">
+                <button onclick="restart()" class="system">Restart</button>
+                <button onclick="shutdown()" class="system">Shutdown</button>
+            </span>
+        </div>
+        <div class="measurement">
+            <p>Counts:</p>
+            <h3 id="counts">0</h3>
+        </div>
+        <div class="measurement">
+            <div>
+                <span>Speed: </span>
+
+                <input type="radio" id="fast" name="speed" value="fast" checked>
+                <label for="fast">Fast</label>
+
+                <input type="radio" id="slow" name="speed" value="slow">
+                <label for="slow">Slow</label>
+            </div>
+            <div>
+                <p>Counts Per Minute:</p>
+                <h3 id="cpm">0</h3>
+            </div>
+        </div>
+        <div id="graph"></div>
+    </body>
+    <script src="plotly-2.14.0.min.js"></script>
+    <script>
+        counter = 1;
+        handle = null;
+
+        x_vals = [];
+        cpm_fast = [];
+        cpm_slow = [];
+        counts = [];
+
+        function restart() {
+            var xhttp = new XMLHttpRequest();
+            xhttp.open("POST", '/restart', true);
+            xhttp.send();
+        }
+
+        function shutDown() {
+            var xhttp = new XMLHttpRequest();
+            xhttp.open("POST", '/shutdown', true);
+            xhttp.send();
+        }
+
+        function redirect() {
+            stopLogging(true);
+        }
+
+        function sendLoc(position) {
+            if (navigator.geolocation) {
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", '/', true);
+                xhttp.send("," + position.coords.latitude + "," + position.coords.longitude);
+            }
+            else {
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", '/', true);
+                xhttp.send(",,");
+            }
+        }
+
+        function locError(error) {
+            switch(error) {
+                case error.PERMISSION_DENIED:
+                    console.log("The user denied location request");
+                    break;
+                case error.POSITION_UNAVAILABLE:
+                    console.log("Location is not available");
+                    break;
+                case error.TIMEOUT:
+                    console.log("The request to get user location took too long");
+                    break;
+                case error.UNKNOWN_ERROR: 
+                    console.log("Something weird happened. Viel spass");
+                    break;
+            }
+            var xhttp = new XMLHttpRequest();
+            xhttp.open("POST", '/', true);
+            xhttp.send(",,");
+        }
+
+
+        function startLogging() {
+            document.getElementById("start").disabled = true;
+            document.getElementById("end").disabled = false;
+
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function() {
+                if (this.status == 200 && !handle) {
+                    handle = setInterval(function() {
+                        navigator.geolocation.getCurrentPosition(sendLoc, locError);
+                    }, 1000);
+                }
+            }
+            xhttp.open("GET", "start", true);
+            xhttp.send();
+        }
+
+        function stopLogging(redirect) {
+            document.getElementById("start").disabled = false;
+            document.getElementById("end").disabled = true;
+
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function() {
+                if (this.readyState == 4 && this.status == 200) {
+                    clearInterval(handle);
+                    handle = null;
+                    if (redirect) {
+                        window.location.href="/download";
+                    }
+                }
+            }
+            xhttp.open("GET", "end", true);
+            xhttp.send();
+        }
+
+        function reloadCounts() {
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function() {
+                if (this.readyState == 4 && this.status == 200) {
+                    response = JSON.parse(this.responseText);
+
+                    x_vals.push(counter++);
+
+                    if (cpm_fast.length >= 60) {
+                        cpm_fast.shift();
+                        cpm_slow.shift();
+                        counts.shift();
+                    }
+                    cpm_fast.push(response.cpm_fast);
+                    cpm_slow.push(response.cpm_slow);
+                    counts.push(response.counts);
+
+                    var counts_trace = {
+                            x: x_vals,
+                            y: counts,
+                            type: 'scatter'
+                        };
+
+                    var cpm = 0;
+                    var true_cpm = [];
+                    if (counts.length == 60) {
+                        for (var i = 0; i < counts.length; i++) {
+                            cpm += counts[i];
+                        }
+                        for (var i = 0; i < 60; i++) {
+                            true_cpm.push(cpm);
+                        }
+                    }
+
+                    var cpm_true = {
+                        x: x_vals,
+                        y: true_cpm,
+                        line: {
+                            dash: 'dashdot'
+                        }
+                    }
+
+                    document.getElementById("counts").innerText = response.counts;
+
+                    if (document.querySelector('input[name="speed"]:checked').value == "fast") {
+                        document.getElementById("cpm").innerText = response.cpm_fast;
+
+                        var cpm_trace = {
+                            x: x_vals,
+                            y: cpm_fast,
+                            type: 'scatter'
+                        };
+
+                        if (counts.length == 60) {
+                            Plotly.newPlot("graph", [counts_trace, cpm_trace, cpm_true]);
+                        } else {
+                            Plotly.newPlot("graph", [counts_trace, cpm_trace]);
+                        }
+                    } else {
+                        document.getElementById("cpm").innerText = response.cpm_slow;
+                        
+                        var cpm_trace = {
+                            x: x_vals,
+                            y: cpm_slow,
+                            type: 'scatter'
+                        };
+                        
+                        if (counts.length == 60) {
+                            Plotly.newPlot("graph", [counts_trace, cpm_trace, cpm_true]);
+                        } else {
+                            Plotly.newPlot("graph", [counts_trace, cpm_trace]);
+                        }
+                    }
+
+                    
+                }
+            };
+            xhttp.open("GET", "data", true);
+            xhttp.send();
+        }
+        setInterval(reloadCounts, 1000);
+        
+    </script>
+</html>
