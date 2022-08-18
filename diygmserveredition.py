@@ -12,7 +12,7 @@ import time
 import threading
 import signal
 import sys
-import RPi.GPIO as GPIO
+import pigpio
 import os
 import datetime
 import ssl
@@ -21,25 +21,22 @@ host = "192.168.4.1"
 port = 8080
 
 # Pins
-GPIO.setmode(GPIO.BOARD) # using pin labels on RPi Header
-PWM_GPIO = 12 # make sure to use a PWM pin (check RPi datasheet)
-MEAS_GPIO = 40
-PULLUP_GPIO = 32
+pi = pigpio.pi()
+
+PWM_GPIO = 18 # make sure to use a PWM pin (check RPi datasheet)
+MEAS_GPIO = 21
+PULLUP_GPIO = 12
 
 # Disables error message
 #GPIO.setwarnings(False)
 
 # PWM Pin
-GPIO.setup(PWM_GPIO, GPIO.OUT)
-GPIO.output(PWM_GPIO, GPIO.HIGH)
-pwm = GPIO.PWM(PWM_GPIO, 1000) # Set the frequency and instantiate PWM control on pin
+pi.hardware_PWM(PWM_GPIO, 1000, 100000) # Set the frequency and instantiate PWM control on pin
 
 # Measurement Receiver Pin
-GPIO.setup(MEAS_GPIO, GPIO.IN)
 
 # Measurement Pullup Pin
-GPIO.setup(PULLUP_GPIO, GPIO.OUT)
-GPIO.output(PULLUP_GPIO, GPIO.HIGH)
+pi.write(PULLUP_GPIO, 1)
 
 lock = threading.Lock()
 
@@ -67,17 +64,11 @@ def reset():
         lock.release()
         time.sleep(1)
 
-def detection_callback(channel):
+def detection_callback(gpio, level, tick):
     lock.acquire()
     global counts
     counts += 1
     lock.release()
-
-def signal_handler(sig, frame):
-    global QUIT
-    pwm.stop()
-    GPIO.cleanup()
-    QUIT = True
 
 class Server(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -215,14 +206,7 @@ class Server(BaseHTTPRequestHandler):
                 self.data_string = self.rfile.read(int(self.headers['Content-Length']))
                 self.data_string = self.data_string.decode("utf-8")
 
-                file.write(f"country_code=US\n \
-                            interface=wlan0\n \
-                            ssid={self.data_string}\n \
-                            hw_mode=g\n \
-                            channel=7\n \
-                            macaddr_acl=0\n \
-                            auth_algs=1\n \
-                            ignore_broadcast_ssid=0")
+                file.write(f"country_code=US\ninterface=wlan0\nssid={self.data_string}\nhw_mode=g\nchannel=7\nmacaddr_acl=0\nauth_algs=1\nignore_broadcast_ssid=0")
                 lock.release()
                 os.system("sudo reboot")
         else: 
@@ -264,15 +248,8 @@ if __name__=="__main__":
         pass
     else:
         os.mkdir(dir)
-    
-    # Set duty cycle. Higher the number, higher the voltage.  10 for russian tubes, 60 for american tubes.
-    pwm.start(15)
-    
-    # Set callback for detection event
-    GPIO.add_event_detect(MEAS_GPIO, GPIO.FALLING, callback=detection_callback)
-    
-    # Clean exit with ctrl+c
-    signal.signal(signal.SIGINT, signal_handler)
+    pi.callback(MEAS_GPIO, pigpio.FALLING_EDGE, detection_callback)
+
 
     t = threading.Thread(target=reset, daemon=True)
     t.start()
@@ -287,5 +264,3 @@ if __name__=="__main__":
 
     t.stop()
     Server.server_close()
-    pwm.stop()
-    GPIO.cleanup()

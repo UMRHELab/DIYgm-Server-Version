@@ -104,7 +104,7 @@
             <button onclick="redirect()">Download Logs</button>
             <span id="systembuttons">
                 <button onclick="restart()" class="system">Restart</button>
-                <button onclick="shutdown()" class="system">Shutdown</button>
+                <button onclick="shutDown()" class="system">Shutdown</button>
             </span>
         </div>
         <div class="measurement">
@@ -242,7 +242,8 @@
                     var counts_trace = {
                             x: x_vals,
                             y: counts,
-                            type: 'scatter'
+                            type: 'scatter',
+                            name: 'Counts'
                         };
 
                     var cpm = 0;
@@ -261,7 +262,8 @@
                         y: true_cpm,
                         line: {
                             dash: 'dashdot'
-                        }
+                        },
+                        name: 'CPM True'
                     }
 
                     document.getElementById("counts").innerText = response.counts;
@@ -272,7 +274,8 @@
                         var cpm_trace = {
                             x: x_vals,
                             y: cpm_fast,
-                            type: 'scatter'
+                            type: 'scatter',
+                            name: 'CPM Fast'
                         };
 
                         if (counts.length == 60) {
@@ -286,7 +289,8 @@
                         var cpm_trace = {
                             x: x_vals,
                             y: cpm_slow,
-                            type: 'scatter'
+                            type: 'scatter',
+                            name: 'CPM Slow'
                         };
                         
                         if (counts.length == 60) {
