@@ -4,14 +4,13 @@
 
 #Aug 12. 2022
 
-#If you're reading this, I'm sorry I was given 24 hours to turn this around
-
 from code import compile_command
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import time
 import threading
 import signal
 import sys
+from unicodedata import name
 import pigpio
 import os
 import datetime
@@ -23,7 +22,8 @@ port = 8080
 # Pins
 pi = pigpio.pi()
 
-PWM_GPIO = 18 # make sure to use a PWM pin (check RPi datasheet)
+#PWM_GPIO = 18 # reg edition make sure to use a PWM pin (check RPi datasheet)
+PWM_GPIO = 13 # this is for diygm rws lite edition
 MEAS_GPIO = 21
 PULLUP_GPIO = 12
 
@@ -33,13 +33,33 @@ PULLUP_GPIO = 12
 # PWM Pin
 pi.hardware_PWM(PWM_GPIO, 1000, 100000) # Set the frequency and instantiate PWM control on pin
 
-# Measurement Receiver Pin
+# random number generation
+randnum = 0
+last_rand = 0
+
+# Thread handle for driving logging
+loggingThread = None
 
 # Measurement Pullup Pin
 pi.write(PULLUP_GPIO, 1)
 
+# Preventing race conditions
 lock = threading.Lock()
 
+'''
+def runrand():
+    while True:
+        lock.acquire()
+        if randnum == 10:
+            randnum = 0
+        else:
+            randnum += 1
+        lock.release()
+        time.sleep(.1)
+'''
+
+# This method is called every second and handles the pushing and popping for the cpm lists
+# this runs on a separate thread
 def reset():
     while True:
         lock.acquire()
@@ -47,39 +67,84 @@ def reset():
         global counts
         global cpm_fast
         global cpm_slow
+        global fast_min
+        global slow_min 
+        global count_min
+
+        # cpm fast averages over 4 seconds, so make only four values in the array
         if len(cpm_fast) < 4:
             cpm_fast.append(counts)
         else:
             cpm_fast.pop(0)
             cpm_fast.append(counts)
 
+        # cpm fast averages over 22 seconds, so make only 22 values in the array
         if len(cpm_slow) < 22:
             cpm_slow.append(counts)
         else:
             cpm_slow.pop(0)
             cpm_slow.append(counts)
 
+        if len(fast_min) < 60:
+            fast_min.append(int(sum(cpm_fast) * 60/len(cpm_fast)))
+            slow_min.append(int(sum(cpm_slow) * 60/len(cpm_slow)))
+            count_min.append(counts)
+        else:
+            fast_min.append(int(sum(cpm_fast) * 60/len(cpm_fast)))
+            fast_min.pop(0)
+
+            slow_min.append(int(sum(cpm_slow) * 60/len(cpm_slow)))
+            slow_min.pop(0)
+
+            count_min.append(counts)
+            count_min.pop(0)
+
         last_count = counts
         counts = 0
         lock.release()
         time.sleep(1)
 
+# This is called every count, don't change arguments of function
 def detection_callback(gpio, level, tick):
     lock.acquire()
     global counts
     counts += 1
+    #last_rand = randnum
+    #dir = os.path.dirname(os.path.abspath(__file__)) + f"/logs/rand.csv"
+    #with open(dir, "a+") as log:
+    #    log.write(f"{last_rand}\n")
     lock.release()
 
+def log():
+    global last_lon
+    global last_lat
+    global stopLog
+    global name
+    while True:
+        lock.acquire()
+        if (stopLog):
+            lock.release()
+            break
+        dir = os.path.dirname(os.path.abspath(__file__)) + f"/logs/{name}.csv"
+        with open(dir, "a+") as log:
+            log.write(f"{datetime.datetime.now()},{last_lat},{last_lon},{last_count},{fast_min[len(fast_min)-1]},{slow_min[len(slow_min)-1]}\n")
+        lock.release()
+        time.sleep(1)
+
+# This is a class built on top of http handler that serves as the wireless access point for the diygm
+# interface 
 class Server(BaseHTTPRequestHandler):
     def do_GET(self):
         global log
+        global loggingThread
+        global stopLog
         if self.path == "/data":
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
 
             lock.acquire()
-            self.wfile.write(bytes(f"{{\"counts\": {last_count}, \"cpm_fast\": {int(sum(cpm_fast) * 60/len(cpm_fast))}, \"cpm_slow\": {int(sum(cpm_slow) * 60/len(cpm_slow))}}}", "utf-8"))
+            self.wfile.write(bytes(f"{{\"counts\": {count_min}, \"cpm_fast\": {fast_min}, \"cpm_slow\": {slow_min}}}", "utf-8"))
             lock.release()
         elif self.path == "/plotly-2.14.0.min.js":
             self.send_response(200)
@@ -90,26 +155,36 @@ class Server(BaseHTTPRequestHandler):
 
             self.wfile.write(res.read())
         elif self.path == "/start":
+            # create log pointer
             lock.acquire()
-            if not log:
+            if not loggingThread.is_alive():
+                global name
                 name = str(datetime.datetime.now()).replace(" ", "_")
                 dir = os.path.dirname(os.path.abspath(__file__)) + f"/logs/{name}.csv"
-                log = dir
-                with open(log, "w") as file:
-                    file.write("Time,Latitude,Longitude,Counts,CPM Fast,CPM Slow\n")
+                with open(dir, "w") as log_file:
+                    log_file.write("Time,Latitude,Longitude,Counts,CPM Fast,CPM Slow\n")
             lock.release()
+
+            # start logging thread, should come after the log pointer
+            if not loggingThread.is_alive():
+                stopLog = False
+                loggingThread = threading.Thread(target=log, daemon=True)
+                loggingThread.start()
             self.send_response(200) 
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(bytes("{}", "utf-8"))
         elif self.path == "/end":
-            lock.acquire()
-            log = None
-            lock.release()
             self.send_response(200) 
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            self.wfile.write(bytes("{}", "utf-8"))            
+            self.wfile.write(bytes("{}", "utf-8"))      
+
+            # stop the thread and null out the file handle to the log
+            lock.acquire()
+            if (loggingThread.is_alive()):
+                stopLog = True
+            lock.release()
         elif self.path == "/download":
             self.send_response(200)
             self.send_header("Content-type", "text/html")
@@ -126,6 +201,19 @@ class Server(BaseHTTPRequestHandler):
             res = open("update.html", "rb")
 
             self.wfile.write(res.read())
+        elif self.path == "/getStatus":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+
+            bool = 'false'
+            # i know this is terrible, but json doesn't play nice with True instead of true
+            if not loggingThread.is_alive():
+                bool = 'true'
+
+            lock.acquire()
+            self.wfile.write(bytes(f"{{\"log\": {bool}}}", "utf-8"))
+            lock.release()
         else:
             self.send_response(200)
             self.send_header("Content-type", "text/html")
@@ -181,7 +269,7 @@ class Server(BaseHTTPRequestHandler):
             res += "]}"
 
             self.wfile.write(bytes(res, "utf-8"))
-        elif self.path[0:7] == "/update":
+        elif self.path[0:7] == "/update": # this is the system updater
             with open(self.path[8:], "w") as file:
                 lock.acquire()
                 self.data_string = self.rfile.read(int(self.headers['Content-Length']))
@@ -190,35 +278,49 @@ class Server(BaseHTTPRequestHandler):
                 file.write(self.data_string)
                 lock.release()
             
+            # restart the system if the python file was updated
             if self.path[8:] == os.path.basename(__file__):
                 os.system("sudo reboot")
             self.send_response(200) 
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(bytes("{}", "utf-8"))
-        elif self.path == "/restart":
+        elif self.path == "/restart": #restart the pi
             os.system("sudo reboot")
-        elif self.path == "/shutdown":
+        elif self.path == "/shutdown": #shutdown the raspberry pi
             os.system("sudo shutdown -h now")
-        elif self.path == "/host":
+        elif self.path == "/host": #handles changing the hostname
             with open("/etc/hostapd/hostapd.conf", "w") as file:
                 lock.acquire()
                 self.data_string = self.rfile.read(int(self.headers['Content-Length']))
                 self.data_string = self.data_string.decode("utf-8")
 
+                #this might not work outside of the united states
                 file.write(f"country_code=US\ninterface=wlan0\nssid={self.data_string}\nhw_mode=g\nchannel=7\nmacaddr_acl=0\nauth_algs=1\nignore_broadcast_ssid=0")
                 lock.release()
                 os.system("sudo reboot")
-        else: 
+        elif self.path == "/pwm": #change the pwm stuff
             self.data_string = self.rfile.read(int(self.headers['Content-Length']))
             self.data_string = self.data_string.decode("utf-8")
 
-            print(self.data_string)
+            self.data_string = self.data_string.split(',')
+
+            duty_cycle = int(self.data_string[0])
+            frequency = int(self.data_string[1])
+
+            pi.hardware_PWM(PWM_GPIO, frequency, duty_cycle * 10000) # Set the frequency and instantiate PWM control on pin
+        else: 
+            global last_lat
+            global last_lon
+
+            self.data_string = self.rfile.read(int(self.headers['Content-Length']))
+            self.data_string = self.data_string.decode("utf-8")
+
+            self.data_string = self.data_string.split(',')
 
             lock.acquire()
-            if log:
-                with open(log, "a") as file:
-                    file.write(f"{datetime.datetime.now()}{self.data_string},{last_count},{int(sum(cpm_fast) * 60/len(cpm_fast))},{int(sum(cpm_slow) * 60/len(cpm_slow))}\n")
+            last_lat = self.data_string[0]
+            last_lon = self.data_string[1]
             lock.release()
 
             self.send_response(200) 
@@ -235,27 +337,56 @@ if __name__=="__main__":
     global cpm_fast
     global cpm_slow
 
-    log = None
+    global fast_min
+    global slow_min 
+    global count_min
+
+    global stopLog
+
+    global last_lon
+    global last_lat
+    global name
+
+    name = ""
+    last_lon = 0
+    last_lat = 0
+
+    stopLog = False
+    loggingThread = threading.Thread(target=log, daemon=True)
+
+    #randomThread = threading.Thread(target=runrand, daemon=True)
+    #randomThread.start()
+
     last_count = 0
     counts = 0
     cpm_fast = [0]
     cpm_slow = [0]
+
+    fast_min = [0]
+    slow_min = [0]
+    count_min = [0]
+
     global QUIT
     QUIT = False
 
+    # creates log directory if it doesn't already exist
     dir = os.path.dirname(os.path.abspath(__file__)) + "/logs"
     if os.path.exists(dir):
         pass
     else:
         os.mkdir(dir)
+
+    # sets interrupt for measurement pin
     pi.callback(MEAS_GPIO, pigpio.FALLING_EDGE, detection_callback)
 
-
+    # create thread to handle cpm lists
     t = threading.Thread(target=reset, daemon=True)
     t.start()
 
+    # initialize the web server
     webServer = HTTPServer((host, port), Server)
 
+    # this needs to be exist to handle communication over https so location can be access
     webServer.socket = ssl.wrap_socket(webServer.socket,
                                         keyfile="forgedkey.pem",
                                         certfile="forgedcert.pem", server_side=True)

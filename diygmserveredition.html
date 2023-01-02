@@ -28,7 +28,7 @@
                 height: 3vh;
             }
             .logging {
-                width: 75%;
+                width: 90%;
                 margin: auto;
             }
 
@@ -106,6 +106,13 @@
                 <button onclick="restart()" class="system">Restart</button>
                 <button onclick="shutDown()" class="system">Shutdown</button>
             </span>
+            <div id="pwm">
+                <span>Duty Cycle (%): </span>
+                <input type="number" id="pwmdutycycle" min="1" max="100">
+                <span>Frequency (Hz): </span>
+                <input type="number" id="pwmfrequency" min="1">
+                <button onclick="updatePWM()">Change PWM</button>
+            </div>
         </div>
         <div class="measurement">
             <p>Counts:</p>
@@ -130,6 +137,24 @@
     </body>
     <script src="plotly-2.14.0.min.js"></script>
     <script>
+        window.onload = (event) => {
+            var xhttp = new XMLHttpRequest();
+            xhttp.onreadystatechange = function() {
+                if (this.readyState == 4 && this.status == 200) {
+                    response = JSON.parse(this.responseText);
+                    if (response.log) {
+                        document.getElementById("start").disabled = false;
+                        document.getElementById("end").disabled = true;
+                    } else {
+                        document.getElementById("start").disabled = true;
+                        document.getElementById("end").disabled = false;
+                    }
+                }
+            }
+            xhttp.open("GET", '/getStatus', true);
+            xhttp.send();
+        };
+
         counter = 1;
         handle = null;
 
@@ -158,12 +183,12 @@
             if (navigator.geolocation) {
                 var xhttp = new XMLHttpRequest();
                 xhttp.open("POST", '/', true);
-                xhttp.send("," + position.coords.latitude + "," + position.coords.longitude);
+                xhttp.send(position.coords.latitude + "," + position.coords.longitude);
             }
             else {
                 var xhttp = new XMLHttpRequest();
                 xhttp.open("POST", '/', true);
-                xhttp.send(",,");
+                xhttp.send("0,0");
             }
         }
 
@@ -185,6 +210,13 @@
             var xhttp = new XMLHttpRequest();
             xhttp.open("POST", '/', true);
             xhttp.send(",,");
+        }
+
+        function updatePWM() {
+            var xhttp = new XMLHttpRequest();
+            xhttp.open("POST", '/pwm', true);
+            xhttp.send( document.getElementById("pwmdutycycle").value + "," +  document.getElementById("pwmfrequency").value);
+            alert("PWM Changed");
         }
 
 
@@ -228,16 +260,12 @@
                 if (this.readyState == 4 && this.status == 200) {
                     response = JSON.parse(this.responseText);
 
-                    x_vals.push(counter++);
-
-                    if (cpm_fast.length >= 60) {
-                        cpm_fast.shift();
-                        cpm_slow.shift();
-                        counts.shift();
+                    while (cpm_fast.length != x_vals.length) {
+                        x_vals.push(counter++);
                     }
-                    cpm_fast.push(response.cpm_fast);
-                    cpm_slow.push(response.cpm_slow);
-                    counts.push(response.counts);
+                    cpm_fast = response.cpm_fast
+                    cpm_slow = response.cpm_slow
+                    counts = response.counts
 
                     var counts_trace = {
                             x: x_vals,
@@ -266,10 +294,10 @@
                         name: 'CPM True'
                     }
 
-                    document.getElementById("counts").innerText = response.counts;
+                    document.getElementById("counts").innerText = counts[counts.length-1];
 
                     if (document.querySelector('input[name="speed"]:checked').value == "fast") {
-                        document.getElementById("cpm").innerText = response.cpm_fast;
+                        document.getElementById("cpm").innerText = cpm_fast[cpm_fast.length-1];
 
                         var cpm_trace = {
                             x: x_vals,
@@ -284,7 +312,7 @@
                             Plotly.newPlot("graph", [counts_trace, cpm_trace]);
                         }
                     } else {
-                        document.getElementById("cpm").innerText = response.cpm_slow;
+                        document.getElementById("cpm").innerText = cpm_slow[cpm_slow.length-1];
                         
                         var cpm_trace = {
                             x: x_vals,
