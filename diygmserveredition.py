@@ -22,8 +22,8 @@ port = 8080
 # Pins
 pi = pigpio.pi()
 
-#PWM_GPIO = 18 # reg edition make sure to use a PWM pin (check RPi datasheet)
-PWM_GPIO = 13 # this is for diygm rws lite edition
+PWM_GPIO = 18 # reg edition make sure to use a PWM pin (check RPi datasheet)
+#PWM_GPIO = 13 # this is for diygm rws lite edition
 MEAS_GPIO = 21
 PULLUP_GPIO = 12
 
