@@ -15,6 +15,7 @@ import pigpio
 import os
 import datetime
 import ssl
+import zipfile
 
 host = "192.168.4.1"
 port = 8080
@@ -39,6 +40,7 @@ last_rand = 0
 
 # Thread handle for driving logging
 loggingThread = None
+log_start = None
 
 # Measurement Pullup Pin
 pi.write(PULLUP_GPIO, 1)
@@ -127,7 +129,7 @@ def log():
             break
         dir = os.path.dirname(os.path.abspath(__file__)) + f"/logs/{name}.csv"
         with open(dir, "a+") as log:
-            log.write(f"{datetime.datetime.now()},{last_lat},{last_lon},{last_count},{fast_min[len(fast_min)-1]},{slow_min[len(slow_min)-1]}\n")
+            log.write(f"{datetime.datetime.now()-log_start},{last_lat},{last_lon},{last_count},{fast_min[len(fast_min)-1]},{slow_min[len(slow_min)-1]}\n")
         lock.release()
         time.sleep(1)
 
@@ -168,6 +170,7 @@ class Server(BaseHTTPRequestHandler):
             # start logging thread, should come after the log pointer
             if not loggingThread.is_alive():
                 stopLog = False
+                log_start = datetime.datetime.now()
                 loggingThread = threading.Thread(target=log, daemon=True)
                 loggingThread.start()
             self.send_response(200) 
@@ -248,6 +251,22 @@ class Server(BaseHTTPRequestHandler):
             if len(filename) >= 4 and filename[len(filename)-4:] == ".csv" and os.path.exists(path):
                 ret = open(path, "rb")
                 self.wfile.write(ret.read())
+            lock.release()
+        elif self.path == "/downloadall":
+            self.send_response(200) 
+            self.send_header("Content-type", "text/csv")
+            self.end_headers()
+
+            filename = self.path[5:]
+
+            lock.acquire()
+            with zipfile.ZipFile(os.path.dirname(os.path.abspath(__file__)) + "/logs/all-logs.zip", "w") as zip:
+                lognames = os.listdir(os.path.dirname(os.path.abspath(__file__)) + "/logs")
+                for name in lognames:
+                    if name[-3:] != "zip":
+                        zip.write(name)
+            ret = open(os.path.dirname(os.path.abspath(__file__)) + "/logs/all-logs.zip", "rb")
+            self.wfile.write(ret.read())
             lock.release()
         elif self.path == "/logs":
             self.send_response(200)

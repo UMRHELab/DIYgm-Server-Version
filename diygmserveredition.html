@@ -5,15 +5,14 @@
         <title>DIYgm Data</title>
         <style>
             html {
+                font-family: -apple-system,system-ui,"Segoe UI",Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";
                 background-color: #efefef;
             }
             .measurement {
-                font-family: sans-serif;
                 margin: 5vh auto;
                 width: 75%;
                 font-size: 3vh;
                 border: 1px solid #aaaaaa;
-                border-radius: 3%;
                 background-color: #ffffff;
                 padding: .25vh 1vw;
             }
@@ -28,8 +27,10 @@
                 height: 3vh;
             }
             .logging {
-                width: 90%;
+                width: 75%;
                 margin: auto;
+                padding-bottom: 2vh;
+                padding-top: 2vh;
             }
 
             .logging button {
@@ -82,6 +83,56 @@
             box-shadow: rgba(20, 70, 32, .2) 0 1px 0 inset;
             }
 
+            .measurement button {
+            appearance: none;
+            background-color: #2ea44f;
+            border: 1px solid rgba(27, 31, 35, .15);
+            border-radius: 6px;
+            box-shadow: rgba(27, 31, 35, .1) 0 1px 0;
+            box-sizing: border-box;
+            color: #fff;
+            cursor: pointer;
+            display: inline-block;
+            font-family: -apple-system,system-ui,"Segoe UI",Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";
+            font-size: 14px;
+            font-weight: 600;
+            line-height: 20px;
+            padding: 6px 16px;
+            position: relative;
+            text-align: center;
+            text-decoration: none;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            vertical-align: middle;
+            white-space: nowrap;
+            }
+
+            .measurement button:focus:not(:focus-visible):not(.focus-visible) {
+            box-shadow: none;
+            outline: none;
+            }
+            .measurement button:hover {
+            background-color: #2c974b;
+            }
+
+            .measurement button:focus {
+            box-shadow: rgba(46, 164, 79, .4) 0 0 0 3px;
+            outline: none;
+            }
+
+            .measurement button:disabled {
+            background-color: #94d3a2;
+            border-color: rgba(27, 31, 35, .1);
+            color: rgba(255, 255, 255, .8);
+            cursor: default;
+            }
+
+            .measurement button:active {
+            background-color: #298e46;
+            box-shadow: rgba(20, 70, 32, .2) 0 1px 0 inset;
+            }
+
             #end {
                 background-color: #DD2222;
             }
@@ -91,53 +142,98 @@
             .system {
                 background-color: #DD2222 !important;
             }
-            #systembuttons {
-                margin-left: 5vw;
-            }
             #pwm {
                 margin-top: 2%;
+                margin-left: 5vm;
             }
             #pwm input {
                 width: 7%;
+            }
+            #timer input{
+                width:4%;
+            }
+            .filename {
+                width: 10%;
             }
         </style>
     </head>
     
     <body>
         <div class="logging">
-            <button onclick="startLogging()" id="start">Start Logging</button>
-            <button onclick="stopLogging(false)" id="end" disabled="disabled">End Logging</button>
-            <button onclick="redirect()">Download Logs</button>
             <span id="systembuttons">
                 <button onclick="restart()" class="system">Restart</button>
                 <button onclick="shutDown()" class="system">Shutdown</button>
             </span>
-            <div id="pwm">
+            <span id="pwm">
                 <span>Duty Cycle (%): </span>
                 <input type="number" id="pwmdutycycle" min="1" max="100">
                 <span>Frequency (Hz): </span>
                 <input type="number" id="pwmfrequency" min="1">
                 <button onclick="updatePWM()">Change PWM</button>
+            </span>
+        </div>
+        <div class="logging measurement">
+            <div>
+                <button onclick="startLogging()" id="start">Start Logging</button>
+                <button onclick="stopLogging(false)" id="end" disabled="disabled">End Logging</button>
+                <button onclick="redirect()">Download Logs</button>
+            </div>
+            <br/>
+            <div>
+                <span>Filename: </span>
+                <input class="filename" type="text" id="filename">
+            </div>
+
+            <div id="timer">
+                <span>Minutes: </span>
+                <input type="number" id="minutesset" min="0" max="59" value="0" onchange="">
+                <span>Seconds: </span>
+                <input type="number" id="secondsset" min="0" max="59" value="0" onchange="">
+                <button onclick="">Start Timer</button>
+            </div>
+            <div>
+                Time remaining:
+                <span id="minutes">00</span>:
+                <span id="seconds">00</span>
             </div>
         </div>
-        <div class="measurement">
-            <p>Counts:</p>
-            <h3 id="counts">0</h3>
-        </div>
+        
         <div class="measurement">
             <div>
-                <span>Speed: </span>
+                <span>Mode: </span>
 
-                <input type="radio" id="fast" name="speed" value="fast" checked>
-                <label for="fast">Fast</label>
+                <input type="radio" id="ratemetercheck" name="mode" value="ratemeter" onclick="toggleMode();" checked>
+                <label for="ratemeter">Ratemeter</label>
 
-                <input type="radio" id="slow" name="speed" value="slow">
-                <label for="slow">Slow</label>
+                <input type="radio" id="scalercheck" name="mode" value="scaler" onclick="toggleMode();">
+                <label for="scaler">Scaler</label>
             </div>
-            <div>
-                <p>Counts Per Minute:</p>
-                <h3 id="cpm">0</h3>
-            </div>
+            <span id="ratemeter">
+                <div>
+                    <p>Counts Per Second:</p>
+                    <h3 id="counts">0</h3>
+                </div>
+                <div>
+                    <span>Speed: </span>
+
+                    <input type="radio" id="fast" name="speed" value="fast" checked>
+                    <label for="fast">Fast</label>
+
+                    <input type="radio" id="slow" name="speed" value="slow">
+                    <label for="slow">Slow</label>
+                </div>
+                <div>
+                    <p>Counts Per Minute:</p>
+                    <h3 id="cpm">0</h3>
+                </div>
+            </span>
+            <span id="scaler" hidden>
+                <div>
+                    <p>Counts:</p>
+                    <h3 id="scale">0</h3>
+                </div>
+                <button onclick="reset_scaler();">Reset</button>
+            </span>
         </div>
         <div id="graph"></div>
     </body>
@@ -164,10 +260,29 @@
         counter = 1;
         handle = null;
 
+        mode_ratemeter = true;
+
         x_vals = [];
         cpm_fast = [];
         cpm_slow = [];
         counts = [];
+
+        scaler_counts = [0];
+
+        function reset_scaler() {
+            x_vals = [0];
+            scaler_counts = [0];
+        }
+
+        function toggleMode() {
+            var ratemeter = document.getElementById("ratemeter");
+            var scaler = document.getElementById("scaler");
+
+            scaler.hidden = !scaler.hidden;
+            ratemeter.hidden = !ratemeter.hidden;
+
+            mode_ratemeter = !mode_ratemeter;
+        }
 
         function restart() {
             var xhttp = new XMLHttpRequest();
@@ -224,7 +339,33 @@
             xhttp.send( document.getElementById("pwmdutycycle").value + "," +  document.getElementById("pwmfrequency").value);
             alert("PWM Changed");
         }
+        function decrementTimer() {
 
+        }
+        function handleTimer() {
+            var minutes = document.getElementById("minutesset").value;
+            var seconds = document.getElementById("secondsset").value;
+            document.getElementById("minutesset").disabled = true;
+            document.getElementById("secondsset").value = true;
+
+            startLogging();
+            var temp = setInterval(function() {
+                if (seconds != 0) {
+                    seconds -= 1;
+                } else {
+                    minutes -= 1;
+                    seconds = 59;
+                }
+
+                var remaining = 60 * minutes + seconds;
+                document.getElementById("minutes").value = minutes; 
+                document.getElementById("seconds").value = seconds;
+                if (remaining < 0) {
+                    stopLogging()
+                    clearInterval(temp);
+                }
+            }, 1000);
+        }
 
         function startLogging() {
             document.getElementById("start").disabled = true;
@@ -273,11 +414,20 @@
                     cpm_slow = response.cpm_slow
                     counts = response.counts
 
+                    if (scaler_counts) {
+                        scaler_counts.push(scaler_counts[scaler_counts.length-1]+counts[counts.length-1]);
+                    } else {
+                        scaler_counts.push(0);
+                    }
+
                     var counts_trace = {
                             x: x_vals,
                             y: counts,
                             type: 'scatter',
-                            name: 'Counts'
+                            name: 'Counts',
+                            font: {
+                                size: 16
+                            }
                         };
 
                     var cpm = 0;
@@ -302,6 +452,24 @@
 
                     document.getElementById("counts").innerText = counts[counts.length-1];
 
+                    if (!mode_ratemeter) {
+                        scaler_counts += counts[counts.length-1];
+                        document.getElementById("scaler").innerText = scaler_counts;
+                    }
+
+                    var layout = {
+                        xaxis: {
+                            title: "Time (s)",
+                            showgrid: false,
+                            zeroline: true
+                        },
+                        yaxis: {
+                            title: "CPM",
+                            showgrid: false,
+                            zeroline: true
+                        }
+                    }
+
                     if (document.querySelector('input[name="speed"]:checked').value == "fast") {
                         document.getElementById("cpm").innerText = cpm_fast[cpm_fast.length-1];
 
@@ -309,13 +477,20 @@
                             x: x_vals,
                             y: cpm_fast,
                             type: 'scatter',
-                            name: 'CPM Fast'
+                            name: 'CPM Fast',
+                            marker: {
+                                line: {
+                                    color: 'black'
+                                }
+                            }
                         };
 
                         if (counts.length == 60) {
-                            Plotly.newPlot("graph", [counts_trace, cpm_trace, cpm_true]);
+                            //Plotly.newPlot("graph", [counts_trace, cpm_trace, cpm_true]);
+                            Plotly.newPlot("graph", [cpm_trace, cpm_true]);
                         } else {
-                            Plotly.newPlot("graph", [counts_trace, cpm_trace]);
+                            //Plotly.newPlot("graph", [counts_trace, cpm_trace]);
+                            Plotly.newPlot("graph", [cpm_trace]);
                         }
                     } else {
                         document.getElementById("cpm").innerText = cpm_slow[cpm_slow.length-1];
@@ -324,13 +499,20 @@
                             x: x_vals,
                             y: cpm_slow,
                             type: 'scatter',
-                            name: 'CPM Slow'
+                            name: 'CPM Slow',
+                            marker: {
+                                line: {
+                                    color: 'black'
+                                }
+                            }
                         };
                         
                         if (counts.length == 60) {
-                            Plotly.newPlot("graph", [counts_trace, cpm_trace, cpm_true]);
+                            //Plotly.newPlot("graph", [counts_trace, cpm_trace, cpm_true]);
+                            Plotly.newPlot("graph", [cpm_trace, cpm_true]);
                         } else {
-                            Plotly.newPlot("graph", [counts_trace, cpm_trace]);
+                            //Plotly.newPlot("graph", [counts_trace, cpm_trace]);
+                            Plotly.newPlot("graph", [cpm_trace]);
                         }
                     }
 
