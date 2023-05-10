@@ -73,7 +73,7 @@
         <a href="/">
             <button>Back</button>
         </a>
-        <button>Download All</button>
+        <button onclick="downloadall()">Download All</button>
         <div id="logs">
             <h2>Logs:</h2>
         </div>
@@ -102,25 +102,25 @@
             xhttp.send();
         }
 
-        function downloadall(event) {
+        function downloadall() {
             var xhttp = new XMLHttpRequest();
-            var name = event.currentTarget.name;
+            xhttp.responseType = "blob";
             xhttp.onreadystatechange = function() {
                 if (this.readyState == 4 && this.status == 200) { 
                     var temp = document.createElement("a");
                     document.body.appendChild(temp);
                     document.style = "display: none";
 
-                    var blob = new Blob([this.responseText], {type: 'text/csv;charset=utf-8'});
+                    var blob = this.response;
                     var link=window.URL.createObjectURL(blob);
 
                     temp.href = link;
-                    temp.download = name;
+                    temp.download = "all_logs.zip";
                     temp.click();
                     window.URL.revokeObjectURL(link);
                 }
             }
-            xhttp.open("POST", '/downloadall/' + name, true);
+            xhttp.open("POST", '/downloadall', true);
             xhttp.send();
         }
 

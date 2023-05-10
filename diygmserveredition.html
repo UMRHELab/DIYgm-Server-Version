@@ -189,7 +189,7 @@
                 <input type="number" id="minutesset" min="0" max="59" value="0" onchange="">
                 <span>Seconds: </span>
                 <input type="number" id="secondsset" min="0" max="59" value="0" onchange="">
-                <button onclick="">Start Timer</button>
+                <button onclick="handleTimer()">Start Timer</button>
             </div>
             <div>
                 Time remaining:
@@ -267,11 +267,16 @@
         cpm_slow = [];
         counts = [];
 
-        scaler_counts = [0];
+        temp_interval = null;
+
+        scaler_counts = [];
 
         function reset_scaler() {
-            x_vals = [0];
-            scaler_counts = [0];
+            x_vals = [];
+            scaler_counts = [];
+
+            x_vals.push(0);
+            scaler_counts.push(0);
         }
 
         function toggleMode() {
@@ -339,30 +344,32 @@
             xhttp.send( document.getElementById("pwmdutycycle").value + "," +  document.getElementById("pwmfrequency").value);
             alert("PWM Changed");
         }
-        function decrementTimer() {
 
-        }
         function handleTimer() {
             var minutes = document.getElementById("minutesset").value;
             var seconds = document.getElementById("secondsset").value;
             document.getElementById("minutesset").disabled = true;
-            document.getElementById("secondsset").value = true;
+            document.getElementById("secondsset").disabled = true;
 
             startLogging();
-            var temp = setInterval(function() {
-                if (seconds != 0) {
-                    seconds -= 1;
-                } else {
-                    minutes -= 1;
-                    seconds = 59;
+            temp_interval = setInterval(function() {
+                if (seconds != 0 || minutes != 0) {
+                    if (seconds != 0) {
+                        seconds -= 1;
+                    } else {
+                        minutes -= 1;
+                        seconds = 59;
+                    }
                 }
 
                 var remaining = 60 * minutes + seconds;
-                document.getElementById("minutes").value = minutes; 
-                document.getElementById("seconds").value = seconds;
-                if (remaining < 0) {
-                    stopLogging()
-                    clearInterval(temp);
+                document.getElementById("minutes").innerText = minutes; 
+                document.getElementById("seconds").innerText = seconds;
+                if (remaining == 0) {
+                    stopLogging(false)
+                    clearInterval(temp_interval);
+                    document.getElementById("minutesset").disabled = false;
+                    document.getElementById("secondsset").disabled = false;
                 }
             }, 1000);
         }
@@ -371,21 +378,28 @@
             document.getElementById("start").disabled = true;
             document.getElementById("end").disabled = false;
 
+            var name = document.getElementById("filename").value;
+            document.getElementById("filename").disabled = true;
+
             var xhttp = new XMLHttpRequest();
+            xhttp.responseType = 'json';
             xhttp.onreadystatechange = function() {
-                if (this.status == 200 && !handle) {
+                if (this.readyState == 4 && this.status == 200) {
+                    document.getElementById("filename").value = this.response.name;
                     handle = setInterval(function() {
                         navigator.geolocation.getCurrentPosition(sendLoc, locError);
                     }, 1000);
                 }
             }
-            xhttp.open("GET", "start", true);
-            xhttp.send();
+            xhttp.open("POST", "/start", true);
+            xhttp.send( document.getElementById("filename").value);
         }
 
         function stopLogging(redirect) {
             document.getElementById("start").disabled = false;
             document.getElementById("end").disabled = true;
+
+            document.getElementById("filename").disabled = false;
 
             var xhttp = new XMLHttpRequest();
             xhttp.onreadystatechange = function() {
@@ -397,6 +411,7 @@
                     }
                 }
             }
+            
             xhttp.open("GET", "end", true);
             xhttp.send();
         }
@@ -414,21 +429,14 @@
                     cpm_slow = response.cpm_slow
                     counts = response.counts
 
-                    if (scaler_counts) {
+                    if (scaler_counts.length !== 0) {
+                        if (scaler_counts.length == 60) {
+                            scaler_counts.shift();
+                        }
                         scaler_counts.push(scaler_counts[scaler_counts.length-1]+counts[counts.length-1]);
                     } else {
                         scaler_counts.push(0);
                     }
-
-                    var counts_trace = {
-                            x: x_vals,
-                            y: counts,
-                            type: 'scatter',
-                            name: 'Counts',
-                            font: {
-                                size: 16
-                            }
-                        };
 
                     var cpm = 0;
                     var true_cpm = [];
@@ -445,6 +453,7 @@
                         x: x_vals,
                         y: true_cpm,
                         line: {
+                            color: 'rgb(0,0,0)',
                             dash: 'dashdot'
                         },
                         name: 'CPM True'
@@ -452,71 +461,91 @@
 
                     document.getElementById("counts").innerText = counts[counts.length-1];
 
-                    if (!mode_ratemeter) {
-                        scaler_counts += counts[counts.length-1];
-                        document.getElementById("scaler").innerText = scaler_counts;
-                    }
-
                     var layout = {
-                        xaxis: {
-                            title: "Time (s)",
-                            showgrid: false,
-                            zeroline: true
-                        },
-                        yaxis: {
-                            title: "CPM",
-                            showgrid: false,
-                            zeroline: true
+                            xaxis: {
+                                title: "Time (s)",
+                                zeroline: false,
+                                showgrid: false,
+                                showline: true,
+                                ticks: "inside",
+                                range: "nonnegative"
+                            },
+                            yaxis: {
+                                title: "CPM",
+                                zeroline: false,
+                                showgrid: false,
+                                showline: true,
+                                ticks: "inside",
+                                range: "tozero"
+                            }
                         }
-                    }
-
-                    if (document.querySelector('input[name="speed"]:checked').value == "fast") {
-                        document.getElementById("cpm").innerText = cpm_fast[cpm_fast.length-1];
-
+                    if (!mode_ratemeter) {
+                        document.getElementById("scale").innerText = scaler_counts[scaler_counts.length-1];
+                        
+                        
                         var cpm_trace = {
                             x: x_vals,
-                            y: cpm_fast,
-                            type: 'scatter',
+                            y: scaler_counts,
+                            type: 'lines+markers',
                             name: 'CPM Fast',
                             marker: {
+                                color: 'rgb(0,0,0)',
                                 line: {
-                                    color: 'black'
+                                    color: 'rgb(0,0,0)'
                                 }
                             }
                         };
-
-                        if (counts.length == 60) {
-                            //Plotly.newPlot("graph", [counts_trace, cpm_trace, cpm_true]);
-                            Plotly.newPlot("graph", [cpm_trace, cpm_true]);
-                        } else {
-                            //Plotly.newPlot("graph", [counts_trace, cpm_trace]);
-                            Plotly.newPlot("graph", [cpm_trace]);
-                        }
+                        Plotly.newPlot("graph", [cpm_trace], layout);
                     } else {
-                        document.getElementById("cpm").innerText = cpm_slow[cpm_slow.length-1];
-                        
-                        var cpm_trace = {
-                            x: x_vals,
-                            y: cpm_slow,
-                            type: 'scatter',
-                            name: 'CPM Slow',
-                            marker: {
-                                line: {
-                                    color: 'black'
+
+                        if (document.querySelector('input[name="speed"]:checked').value == "fast") {
+                            document.getElementById("cpm").innerText = cpm_fast[cpm_fast.length-1];
+
+                            var cpm_trace = {
+                                x: x_vals,
+                                y: cpm_fast,
+                                type: 'lines+markers',
+                                name: 'CPM Fast',
+                                marker: {
+                                    color: 'rgb(0,0,0)',
+                                    line: {
+                                        color: 'rgb(0,0,0)'
+                                    }
                                 }
+                            };
+
+                            if (counts.length == 60) {
+                                //Plotly.newPlot("graph", [counts_trace, cpm_trace, cpm_true]);
+                                Plotly.newPlot("graph", [cpm_trace, cpm_true], layout);
+                            } else {
+                                //Plotly.newPlot("graph", [counts_trace, cpm_trace]);
+                                Plotly.newPlot("graph", [cpm_trace], layout);
                             }
-                        };
-                        
-                        if (counts.length == 60) {
-                            //Plotly.newPlot("graph", [counts_trace, cpm_trace, cpm_true]);
-                            Plotly.newPlot("graph", [cpm_trace, cpm_true]);
                         } else {
-                            //Plotly.newPlot("graph", [counts_trace, cpm_trace]);
-                            Plotly.newPlot("graph", [cpm_trace]);
+                            document.getElementById("cpm").innerText = cpm_slow[cpm_slow.length-1];
+                            
+                            var cpm_trace = {
+                                x: x_vals,
+                                y: cpm_slow,
+                                type: 'lines+markers',
+                                name: 'CPM Slow',
+                                marker: {
+                                    color: 'rgb(0,0,0)',
+                                    line: {
+                                        color: 'rgb(0,0,0)'
+                                    }
+                                }
+                            };
+                            
+                            if (counts.length == 60) {
+                                //Plotly.newPlot("graph", [counts_trace, cpm_trace, cpm_true]);
+                                Plotly.newPlot("graph", [cpm_trace, cpm_true], layout);
+                            } else {
+                                //Plotly.newPlot("graph", [counts_trace, cpm_trace]);
+                                Plotly.newPlot("graph", [cpm_trace], layout);
+                            }
                         }
                     }
-
-                    
                 }
             };
             xhttp.open("GET", "data", true);

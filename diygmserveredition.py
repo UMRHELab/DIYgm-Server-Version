@@ -16,6 +16,7 @@ import os
 import datetime
 import ssl
 import zipfile
+import zlib
 
 host = "192.168.4.1"
 port = 8080
@@ -28,6 +29,9 @@ PWM_GPIO = 18 # reg edition make sure to use a PWM pin (check RPi datasheet)
 MEAS_GPIO = 21
 PULLUP_GPIO = 12
 
+global filename
+filename = ""
+
 # Disables error message
 #GPIO.setwarnings(False)
 
@@ -37,10 +41,6 @@ pi.hardware_PWM(PWM_GPIO, 1000, 100000) # Set the frequency and instantiate PWM 
 # random number generation
 randnum = 0
 last_rand = 0
-
-# Thread handle for driving logging
-loggingThread = None
-log_start = None
 
 # Measurement Pullup Pin
 pi.write(PULLUP_GPIO, 1)
@@ -121,13 +121,14 @@ def log():
     global last_lon
     global last_lat
     global stopLog
-    global name
+    global filename
+    global log_start
     while True:
         lock.acquire()
         if (stopLog):
             lock.release()
             break
-        dir = os.path.dirname(os.path.abspath(__file__)) + f"/logs/{name}.csv"
+        dir = os.path.dirname(os.path.abspath(__file__)) + f"/logs/{filename}.csv"
         with open(dir, "a+") as log:
             log.write(f"{datetime.datetime.now()-log_start},{last_lat},{last_lon},{last_count},{fast_min[len(fast_min)-1]},{slow_min[len(slow_min)-1]}\n")
         lock.release()
@@ -138,8 +139,8 @@ def log():
 class Server(BaseHTTPRequestHandler):
     def do_GET(self):
         global log
-        global loggingThread
         global stopLog
+        global loggingThread
         if self.path == "/data":
             self.send_response(200)
             self.send_header("Content-type", "application/json")
@@ -156,27 +157,6 @@ class Server(BaseHTTPRequestHandler):
             res = open("plotly-2.14.0.min.js", "rb")
 
             self.wfile.write(res.read())
-        elif self.path == "/start":
-            # create log pointer
-            lock.acquire()
-            if not loggingThread.is_alive():
-                global name
-                name = str(datetime.datetime.now()).replace(" ", "_")
-                dir = os.path.dirname(os.path.abspath(__file__)) + f"/logs/{name}.csv"
-                with open(dir, "w") as log_file:
-                    log_file.write("Time,Latitude,Longitude,Counts,CPM Fast,CPM Slow\n")
-            lock.release()
-
-            # start logging thread, should come after the log pointer
-            if not loggingThread.is_alive():
-                stopLog = False
-                log_start = datetime.datetime.now()
-                loggingThread = threading.Thread(target=log, daemon=True)
-                loggingThread.start()
-            self.send_response(200) 
-            self.send_header("Content-type", "application/json")
-            self.end_headers()
-            self.wfile.write(bytes("{}", "utf-8"))
         elif self.path == "/end":
             self.send_response(200) 
             self.send_header("Content-type", "application/json")
@@ -228,6 +208,10 @@ class Server(BaseHTTPRequestHandler):
 
     def do_POST(self):
         global log
+        global loggingThread
+        global filename
+        global stopLog
+        global log_start
         if len(self.path) > 12 and self.path[0:12] == "/logs/delete":
             filename = self.path[12:]
             path = os.path.dirname(os.path.abspath(__file__)) + f"/logs/{filename}"
@@ -254,19 +238,19 @@ class Server(BaseHTTPRequestHandler):
             lock.release()
         elif self.path == "/downloadall":
             self.send_response(200) 
-            self.send_header("Content-type", "text/csv")
+            self.send_header("Content-type", "text/plain")
             self.end_headers()
 
             filename = self.path[5:]
 
             lock.acquire()
-            with zipfile.ZipFile(os.path.dirname(os.path.abspath(__file__)) + "/logs/all-logs.zip", "w") as zip:
+            with zipfile.ZipFile(os.path.dirname(os.path.abspath(__file__)) + "/logs/all-logs.zip", "w", zipfile.ZIP_DEFLATED) as zip:
                 lognames = os.listdir(os.path.dirname(os.path.abspath(__file__)) + "/logs")
                 for name in lognames:
                     if name[-3:] != "zip":
-                        zip.write(name)
-            ret = open(os.path.dirname(os.path.abspath(__file__)) + "/logs/all-logs.zip", "rb")
-            self.wfile.write(ret.read())
+                        zip.write(os.path.dirname(os.path.abspath(__file__)) + "/logs/" + name, arcname=name)
+            with open(os.path.dirname(os.path.abspath(__file__)) + "/logs/all-logs.zip", "rb") as ret:
+                self.wfile.write(ret.read())
             lock.release()
         elif self.path == "/logs":
             self.send_response(200)
@@ -281,13 +265,42 @@ class Server(BaseHTTPRequestHandler):
             res = "{\"logs\": ["
 
             #this is a workaround for single vs double quotes
-            for name in lognames:
-                res += "\"" + name + "\","
+            if lognames:
+                for name in lognames:
+                    if name[-4:] == '.csv':
+                        res += "\"" + name + "\","
 
-            res = res[0:len(res)-1]
+                res = res[0:len(res)-1]
             res += "]}"
 
             self.wfile.write(bytes(res, "utf-8"))
+        elif self.path == "/start":
+            if int(self.headers['Content-Length']):
+                self.data_string = self.rfile.read(int(self.headers['Content-Length']))
+                self.data_string = self.data_string.decode("utf-8")
+                filename = self.data_string
+                if filename[-4:] == '.csv':
+                    filename = filename[:-4]
+            else:
+                filename = str(datetime.datetime.now()).replace(" ", "_")
+            # create log pointer
+            lock.acquire()
+            if not loggingThread.is_alive():
+                dir = os.path.dirname(os.path.abspath(__file__)) + f"/logs/{filename}.csv"
+                with open(dir, "w") as log_file:
+                    log_file.write("Time,Latitude,Longitude,Counts,CPM Fast,CPM Slow\n")
+            lock.release()
+
+            # start logging thread, should come after the log pointer
+            if not loggingThread.is_alive():
+                stopLog = False
+                log_start = datetime.datetime.now()
+                loggingThread = threading.Thread(target=log, daemon=True)
+                loggingThread.start()
+            self.send_response(200) 
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(bytes(f"{{\"name\": \"{filename}.csv\"}}", "utf-8"))
         elif self.path[0:7] == "/update": # this is the system updater
             with open(self.path[8:], "w") as file:
                 lock.acquire()
@@ -364,17 +377,16 @@ if __name__=="__main__":
 
     global last_lon
     global last_lat
-    global name
+    global loggingThread
+    global log_start
 
-    name = ""
+    log_start = None
+
     last_lon = 0
     last_lat = 0
 
     stopLog = False
     loggingThread = threading.Thread(target=log, daemon=True)
-
-    #randomThread = threading.Thread(target=runrand, daemon=True)
-    #randomThread.start()
 
     last_count = 0
     counts = 0
