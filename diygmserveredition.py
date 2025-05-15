@@ -19,7 +19,7 @@ import zipfile
 import zlib
 import subprocess
 
-DEBUG = True
+DEBUG = False
 
 host = "localhost"
 port = 443
@@ -64,27 +64,29 @@ def reset():
         global count_min
 
         if DEBUG:
-            counts = random.randint(150, 175) / 100
-        if not mode_ionizing and router != "":
-            result = subprocess.run(['sudo', 'iw', ADAPTER, 'scan'], stdout=subprocess.PIPE).stdout.decode('utf-8')
-            for ssid in result.split("BSS"):
-                if ADAPTER in ssid:
-                    signals = ssid.split('\n')
-                    signals = [i for i in signals if 'signal' in i or 'SSID' in i]
-                    i = 0
-                    while i < len(signals):
-                        name = signals[i+1][6:].strip()
-                        if name == router:
-                            # this is in -dBm, we want in mW
-                            strength = signals[i][8:-3]
-                            strength = float(strength)
+            counts = random.randint(0, 100)
+        else:
+            if not mode_ionizing and router != "":
+                result = subprocess.run(['sudo', 'iw', ADAPTER, 'scan'], stdout=subprocess.PIPE).stdout.decode('utf-8')
+                counts = 0
+                for ssid in result.split("BSS"):
+                    if ADAPTER in ssid:
+                        signals = ssid.split('\n')
+                        signals = [i for i in signals if 'signal' in i or 'SSID' in i]
+                        i = 0
+                        while i < len(signals):
+                            name = signals[i+1][6:].strip()
+                            if name == router:
+                                # this is in -dBm, we want in mW
+                                strength = signals[i][8:-3]
+                                strength = float(strength)
 
-                            # dBm = 10*log(power mW)
-                            strength = 10**(strength/10)
-                            counts = strength
-                        i = i + 2
-        elif not mode_ionizing:
-            counts = 0
+                                # dBm = 10*log(power mW)
+                                strength = 10**(strength/10)
+                                counts = strength * 10**9 # mW to pW
+                            i = i + 2
+            elif not mode_ionizing:
+                counts = 0
 
         # cpm fast averages over 4 seconds, so make only four values in the array
         if len(cpm_fast) < 4:
@@ -225,6 +227,13 @@ class Server(BaseHTTPRequestHandler):
         global filename
         global stopLog
         global log_start
+        global mode_ionizing
+        global router
+        global cpm_fast
+        global cpm_slow
+        global fast_min
+        global slow_min 
+        global count_min
         if len(self.path) > 12 and self.path[0:12] == "/logs/delete":
             filename = self.path[12:]
             path = os.path.dirname(os.path.abspath(__file__)) + f"/logs/{filename}"
@@ -264,6 +273,17 @@ class Server(BaseHTTPRequestHandler):
                         zip.write(os.path.dirname(os.path.abspath(__file__)) + "/logs/" + name, arcname=name)
             with open(os.path.dirname(os.path.abspath(__file__)) + "/logs/all-logs.zip", "rb") as ret:
                 self.wfile.write(ret.read())
+            lock.release()
+        elif self.path == "/deleteall":
+            self.send_response(200) 
+            self.send_header("Content-type", "text/plain")
+            self.end_headers()
+
+            lock.acquire()
+            lognames = os.listdir(os.path.dirname(os.path.abspath(__file__)) + "/logs")
+            for name in lognames:
+                if name[-3:] != "zip":
+                    os.remove(os.path.dirname(os.path.abspath(__file__)) + "/logs/" + name)
             lock.release()
         elif self.path == "/logs":
             self.send_response(200)
@@ -356,16 +376,38 @@ class Server(BaseHTTPRequestHandler):
             pi.hardware_PWM(PWM_GPIO, frequency, duty_cycle * 10000) # Set the frequency and instantiate PWM control on pin
         elif self.path == "/ionizing":
             mode_ionizing = True
+            cpm_fast = [0]
+            cpm_slow = [0]
+
+            fast_min = [0]
+            slow_min = [0]
+            count_min = [0]
 
             self.send_response(200) 
             self.send_header("Content-type", "application/json")
             self.end_headers()
         elif self.path == "/wifi":
             mode_ionizing = False
+            cpm_fast = [0]
+            cpm_slow = [0]
+
+            fast_min = [0]
+            slow_min = [0]
+            count_min = [0]
 
             self.send_response(200) 
             self.send_header("Content-type", "application/json")
             self.end_headers()
+        elif self.path == "/routername":
+            self.data_string = self.rfile.read(int(self.headers['Content-Length']))
+            self.data_string = self.data_string.decode("utf-8")
+            print("router: ", self.data_string)
+            router = self.data_string
+
+            self.send_response(200) 
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(bytes("{}", "utf-8"))
         else: 
             global last_lat
             global last_lon
@@ -374,11 +416,12 @@ class Server(BaseHTTPRequestHandler):
             self.data_string = self.data_string.decode("utf-8")
 
             self.data_string = self.data_string.split(',')
-
-            lock.acquire()
-            last_lat = self.data_string[0]
-            last_lon = self.data_string[1]
-            lock.release()
+            
+            if len(self.data_string) > 2:
+                lock.acquire()
+                last_lat = self.data_string[0]
+                last_lon = self.data_string[1]
+                lock.release()
 
             self.send_response(200) 
             self.send_header("Content-type", "application/json")

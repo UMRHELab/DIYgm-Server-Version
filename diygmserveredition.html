@@ -7,6 +7,7 @@
             html {
                 font-family: -apple-system,system-ui,"Segoe UI",Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";
                 background-color: #efefef;
+                font-size: 3vh;
             }
             .measurement {
                 margin: 5vh auto;
@@ -172,11 +173,11 @@
                 <button onclick="updatePWM()">Change PWM</button>
             </span>
             <span>
-                <span>Ionizing</span>
                 <input type="radio" id="ionizingMode" name="ionmode" value="ionizing" onclick="toggleIonizing();" checked>
+                <label for="ionizing">Ionizing</label>
 
-                <span>Non-Ionizing</span>
                 <input type="radio" id="nonionizingMode" name="ionmode" value="nonionizing" onclick="toggleIonizing();">
+                <label for="nonionizing">Non-Ionizing</label>
             </span>
         </div>
         <div class="logging measurement">
@@ -220,20 +221,17 @@
                 </div>
                 <div>
                     <span id="ratemeter">
-                        <div>
-                            <span>SSID: </span>
-                            <input type="text" id="ssid_input" placeholder="SSID" class="filename">
-
-                            <button type="button">Change SSID</button>
+                        <div id="routernameinput" hidden>
+                            <span>Router Name: </span>
+                            <input class="filename" type="text" id="routername" placeholder="Router Name">
+                            <button onclick="updateRouterName();">Update</button>
                         </div>
-                        
                         <div>
-                            <p id="cpsunits" hidden>Counts Per Second:</p>
-                            <p id="wattsunits" >Pico Watts:</p>
+                            <p id="cpsunits">Counts Per Second:</p>
+                            <p id="wattsunits" hidden>Picowatts:</p>
                             <h3 id="counts">0</h3>
                         </div>
-                        
-                        <div hidden>
+                        <div id="speedControl">
                             <span>Speed: </span>
 
                             <input type="radio" id="fast" name="speed" value="fast" checked>
@@ -242,7 +240,7 @@
                             <input type="radio" id="slow" name="speed" value="slow">
                             <label for="slow">Slow</label>
                         </div>
-                        <div hidden>
+                        <div id="cpmmeter">
                             <p>Counts Per Minute:</p>
                             <h3 id="cpm">0</h3>
                         </div>
@@ -251,6 +249,8 @@
                         <div>
                             <p>Counts:</p>
                             <h3 id="scale">0</h3>
+                            <p>Standard Deviation</p>
+                            <h3 id="stddev">0</h3>
                         </div>
                         <button onclick="reset_scaler();">Reset</button>
                     </span>
@@ -263,7 +263,9 @@
     <script>
         window.onload = (event) => {
             timer.hidden = !document.getElementById("toggleTimer").checked;
-            document.getElementById("ionizing").hidden = document.getElementById("nonionizingMode").checked;
+            if (document.getElementById("nonionizingMode").checked) {
+                toggleIonizing()
+            }
             document.getElementById("ratemeter").hidden = !document.getElementById("ratemetercheck").checked;
             document.getElementById("scaler").hidden = !document.getElementById("scalercheck").checked;
             mode_ratemeter = document.getElementById("ratemetercheck").checked;
@@ -296,6 +298,8 @@
         cpm_fast = [];
         cpm_slow = [];
         counts = [];
+        std_dev_counts = [];
+        std_dev = 0;
 
         temp_interval = null;
 
@@ -309,25 +313,33 @@
         }
 
         function toggleIonizing() {
-            var ionizing = document.getElementById("ionizing");
-            var nonionizing = document.getElementById("nonionizing");
+            var ionizing = document.getElementById("ionizingMode");
+            var nonionizing = document.getElementById("nonionizingMode");
 
             if (ionizing.checked) {
                 document.getElementById("cpsunits").hidden = false;
                 document.getElementById("wattsunits").hidden = true;
                 document.getElementById("ionizing").hidden = false;
+                document.getElementById("cpmmeter").hidden = false;
+                document.getElementById("routernameinput").hidden = true;
+                document.getElementById("speedControl").hidden = false;
 
                 mode_ionizing = true;
                 var xhttp = new XMLHttpRequest();
+                xhttp.timeout = 750;
                 xhttp.open("POST", '/ionizing', true);
                 xhttp.send(mode_ionizing);
             } else {
                 document.getElementById("cpsunits").hidden = true;
                 document.getElementById("wattsunits").hidden = false;
                 document.getElementById("ionizing").hidden = true;
+                document.getElementById("cpmmeter").hidden = true;
+                document.getElementById("routernameinput").hidden = false;
+                document.getElementById("speedControl").hidden = true;
 
                 mode_ionizing = false;
                 var xhttp = new XMLHttpRequest();
+                xhttp.timeout = 750;
                 xhttp.open("POST", '/wifi', true);
                 xhttp.send(mode_ionizing);
             }
@@ -338,11 +350,13 @@
         function reset_scaler() {
             x_vals = [];
             scaler_counts = [];
+            std_dev_counts = [];
 
             counter = 1;
 
             x_vals.push(0);
             scaler_counts.push(0);
+            std_dev_counts.push(0);
         }
 
         function toggleMode() {
@@ -375,11 +389,13 @@
             if (navigator.geolocation) {
                 var xhttp = new XMLHttpRequest();
                 xhttp.open("POST", '/', true);
+                xhttp.timeout = 750;
                 xhttp.send(position.coords.latitude + "," + position.coords.longitude);
             }
             else {
                 var xhttp = new XMLHttpRequest();
                 xhttp.open("POST", '/', true);
+                xhttp.timeout = 750;
                 xhttp.send("0,0");
             }
         }
@@ -401,6 +417,7 @@
             }
             var xhttp = new XMLHttpRequest();
             xhttp.open("POST", '/', true);
+            xhttp.timeout = 750;
             xhttp.send(",,");
         }
 
@@ -409,6 +426,14 @@
             xhttp.open("POST", '/pwm', true);
             xhttp.send( document.getElementById("pwmdutycycle").value + "," +  document.getElementById("pwmfrequency").value);
             alert("PWM Changed");
+        }
+
+        function updateRouterName() {
+            var name = document.getElementById("routername").value;
+
+            var xhttp = new XMLHttpRequest();
+            xhttp.open("POST", '/routername', true);
+            xhttp.send(name);
         }
 
         function startLogging() {
@@ -488,13 +513,18 @@
                 if (this.readyState == 4 && this.status == 200) {
                     response = JSON.parse(this.responseText);
 
-                    while (cpm_fast.length != x_vals.length) {
-                        x_vals.push(counter++);
+                    x_vals = [];
+                    for (var i = 0; i < 60; i++) {
+                        x_vals.push(i);
                     }
                     cpm_fast = response.cpm_fast
                     cpm_slow = response.cpm_slow
                     counts = response.counts
+                    std_dev_counts.push(counts[counts.length-1]);
 
+                    std_dev = math.sqrt(std_dev_counts.reduce((a, b) => a + Math.pow(b - (std_dev_counts.reduce((a, b) => a + b) / std_dev_counts.length), 2), 0) / std_dev_counts.length);
+                    document.getElementById("stddev").innerText = std_dev.toFixed(2);
+                    
                     if (scaler_counts.length !== 0) {
                         if (scaler_counts.length == 60) {
                             scaler_counts.shift();
@@ -525,7 +555,7 @@
                         name: 'CPM True'
                     }
 
-                    document.getElementById("counts").innerText = counts[counts.length-1];
+                    document.getElementById("counts").innerText = !mode_ionizing ? counts[counts.length-1].toFixed(2) : counts[counts.length-1];
 
                     var layout = {
                             xaxis: {
@@ -537,7 +567,7 @@
                                 rangemode: "nonnegative"
                             },
                             yaxis: {
-                                title: "Pico Watts",
+                                title: "CPM",
                                 zeroline: false,
                                 showgrid: false,
                                 showline: true,
@@ -553,7 +583,7 @@
                             x: x_vals,
                             y: scaler_counts,
                             type: 'lines+markers',
-                            name: 'CPM Fast',
+                            name: 'Counts',
                             marker: {
                                 color: 'rgb(0,0,0)',
                                 line: {
@@ -563,15 +593,14 @@
                         };
                         Plotly.newPlot("graph", [cpm_trace], layout);
                     } else {
-
-                        if (document.querySelector('input[name="speed"]:checked').value == "fast") {
+                        if (!mode_ionizing || document.querySelector('input[name="speed"]:checked').value == "fast") {
                             document.getElementById("cpm").innerText = cpm_fast[cpm_fast.length-1];
 
                             var cpm_trace = {
                                 x: x_vals,
-                                y: counts,
+                                y: !mode_ionizing ? counts : cpm_fast,
                                 type: 'lines+markers',
-                                name: 'CPM Fast',
+                                name: !mode_ionizing  ? 'Picowatts': 'CPM Fast',
                                 marker: {
                                     color: 'rgb(0,0,0)',
                                     line: {
@@ -580,9 +609,9 @@
                                 }
                             };
 
-                            if (counts.length == 60) {
+                            if (mode_ionizing && counts.length == 60) {
                                 //Plotly.newPlot("graph", [counts_trace, cpm_trace, cpm_true]);
-                                Plotly.newPlot("graph", [cpm_trace], layout);
+                                Plotly.newPlot("graph", [cpm_trace, cpm_true], layout);
                             } else {
                                 //Plotly.newPlot("graph", [counts_trace, cpm_trace]);
                                 Plotly.newPlot("graph", [cpm_trace], layout);
@@ -614,6 +643,7 @@
                     }
                 }
             };
+            xhttp.timeout = 750;
             xhttp.open("GET", "data", true);
             xhttp.send();
         }

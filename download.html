@@ -74,12 +74,26 @@
             <button>Back</button>
         </a>
         <button onclick="downloadall()">Download All</button>
+        <button onclick="deleteall()">Delete All</button>
         <div id="logs">
             <h2>Logs:</h2>
         </div>
         <iframe id="download" style="display:none;"></iframe>
     </body>
     <script>
+        function deleteall() {
+            confirmed = confirm("Please confirm delete");
+            if (confirmed) {
+                var xhttp = new XMLHttpRequest();
+                xhttp.onreadystatechange = function() {
+                    if (this.readyState == 4 && this.status == 200) { 
+                        location.reload();
+                    }
+                }
+                xhttp.open("POST", '/deleteall', true);
+                xhttp.send();
+            }
+        }
         function downloadlog(event) {
             var xhttp = new XMLHttpRequest();
             var name = event.currentTarget.name;
