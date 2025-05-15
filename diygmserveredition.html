@@ -166,10 +166,17 @@
             </span>
             <span id="pwm">
                 <span>Duty Cycle (%): </span>
-                <input type="number" id="pwmdutycycle" min="1" max="100">
+                <input type="number" id="pwmdutycycle" min="1" max="100" placeholder="10">
                 <span>Frequency (Hz): </span>
-                <input type="number" id="pwmfrequency" min="1">
+                <input type="number" id="pwmfrequency" min="1" placeholder="1000">
                 <button onclick="updatePWM()">Change PWM</button>
+            </span>
+            <span>
+                <span>Ionizing</span>
+                <input type="radio" id="ionizingMode" name="ionmode" value="ionizing" onclick="toggleIonizing();" checked>
+
+                <span>Non-Ionizing</span>
+                <input type="radio" id="nonionizingMode" name="ionmode" value="nonionizing" onclick="toggleIonizing();">
             </span>
         </div>
         <div class="logging measurement">
@@ -184,62 +191,83 @@
                 <input class="filename" type="text" id="filename">
             </div>
 
-            <div id="timer">
+            <label>
+                <input type="checkbox" id="toggleTimer" onclick="toggleTimer()"> Use Timer
+            </label>
+
+            <div id="timer" hidden>
                 <span>Minutes: </span>
                 <input type="number" id="minutesset" min="0" max="59" value="0" onchange="">
                 <span>Seconds: </span>
                 <input type="number" id="secondsset" min="0" max="59" value="0" onchange="">
-                <button onclick="handleTimer()">Start Timer</button>
-            </div>
-            <div>
-                Time remaining:
-                <span id="minutes">00</span>:
-                <span id="seconds">00</span>
+
+                <div>
+                    Time remaining:
+                    <span id="minutes">00</span>:
+                    <span id="seconds">00</span>
+                </div>
             </div>
         </div>
-        
-        <div class="measurement">
-            <div>
-                <span>Mode: </span>
+            <div class="measurement">
+                <div id="ionizing">
+                    <span>Mode: </span>
 
-                <input type="radio" id="ratemetercheck" name="mode" value="ratemeter" onclick="toggleMode();" checked>
-                <label for="ratemeter">Ratemeter</label>
+                    <input type="radio" id="ratemetercheck" name="mode" value="ratemeter" onclick="toggleMode();" checked>
+                    <label for="ratemeter">Ratemeter</label>
 
-                <input type="radio" id="scalercheck" name="mode" value="scaler" onclick="toggleMode();">
-                <label for="scaler">Scaler</label>
+                    <input type="radio" id="scalercheck" name="mode" value="scaler" onclick="toggleMode();">
+                    <label for="scaler">Scaler</label>
+                </div>
+                <div>
+                    <span id="ratemeter">
+                        <div>
+                            <span>SSID: </span>
+                            <input type="text" id="ssid_input" placeholder="SSID" class="filename">
+
+                            <button type="button">Change SSID</button>
+                        </div>
+                        
+                        <div>
+                            <p id="cpsunits" hidden>Counts Per Second:</p>
+                            <p id="wattsunits" >Pico Watts:</p>
+                            <h3 id="counts">0</h3>
+                        </div>
+                        
+                        <div hidden>
+                            <span>Speed: </span>
+
+                            <input type="radio" id="fast" name="speed" value="fast" checked>
+                            <label for="fast">Fast</label>
+
+                            <input type="radio" id="slow" name="speed" value="slow">
+                            <label for="slow">Slow</label>
+                        </div>
+                        <div hidden>
+                            <p>Counts Per Minute:</p>
+                            <h3 id="cpm">0</h3>
+                        </div>
+                    </span>
+                    <span id="scaler" hidden>
+                        <div>
+                            <p>Counts:</p>
+                            <h3 id="scale">0</h3>
+                        </div>
+                        <button onclick="reset_scaler();">Reset</button>
+                    </span>
+                </div>
+                <div id="graph"></div>
             </div>
-            <span id="ratemeter">
-                <div>
-                    <p>Counts Per Second:</p>
-                    <h3 id="counts">0</h3>
-                </div>
-                <div>
-                    <span>Speed: </span>
-
-                    <input type="radio" id="fast" name="speed" value="fast" checked>
-                    <label for="fast">Fast</label>
-
-                    <input type="radio" id="slow" name="speed" value="slow">
-                    <label for="slow">Slow</label>
-                </div>
-                <div>
-                    <p>Counts Per Minute:</p>
-                    <h3 id="cpm">0</h3>
-                </div>
-            </span>
-            <span id="scaler" hidden>
-                <div>
-                    <p>Counts:</p>
-                    <h3 id="scale">0</h3>
-                </div>
-                <button onclick="reset_scaler();">Reset</button>
-            </span>
         </div>
-        <div id="graph"></div>
     </body>
     <script src="plotly-2.14.0.min.js"></script>
     <script>
         window.onload = (event) => {
+            timer.hidden = !document.getElementById("toggleTimer").checked;
+            document.getElementById("ionizing").hidden = document.getElementById("nonionizingMode").checked;
+            document.getElementById("ratemeter").hidden = !document.getElementById("ratemetercheck").checked;
+            document.getElementById("scaler").hidden = !document.getElementById("scalercheck").checked;
+            mode_ratemeter = document.getElementById("ratemetercheck").checked;
+
             var xhttp = new XMLHttpRequest();
             xhttp.onreadystatechange = function() {
                 if (this.readyState == 4 && this.status == 200) {
@@ -262,6 +290,8 @@
 
         mode_ratemeter = true;
 
+        mode_ionizing = true;
+
         x_vals = [];
         cpm_fast = [];
         cpm_slow = [];
@@ -271,9 +301,45 @@
 
         scaler_counts = [];
 
+        function toggleTimer() {
+            var timer = document.getElementById("timer");
+            var toggleTimer = document.getElementById("toggleTimer");
+
+            timer.hidden = !timer.hidden;
+        }
+
+        function toggleIonizing() {
+            var ionizing = document.getElementById("ionizing");
+            var nonionizing = document.getElementById("nonionizing");
+
+            if (ionizing.checked) {
+                document.getElementById("cpsunits").hidden = false;
+                document.getElementById("wattsunits").hidden = true;
+                document.getElementById("ionizing").hidden = false;
+
+                mode_ionizing = true;
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", '/ionizing', true);
+                xhttp.send(mode_ionizing);
+            } else {
+                document.getElementById("cpsunits").hidden = true;
+                document.getElementById("wattsunits").hidden = false;
+                document.getElementById("ionizing").hidden = true;
+
+                mode_ionizing = false;
+                var xhttp = new XMLHttpRequest();
+                xhttp.open("POST", '/wifi', true);
+                xhttp.send(mode_ionizing);
+            }
+
+            
+        }
+
         function reset_scaler() {
             x_vals = [];
             scaler_counts = [];
+
+            counter = 1;
 
             x_vals.push(0);
             scaler_counts.push(0);
@@ -345,36 +411,13 @@
             alert("PWM Changed");
         }
 
-        function handleTimer() {
+        function startLogging() {
             var minutes = document.getElementById("minutesset").value;
             var seconds = document.getElementById("secondsset").value;
-            document.getElementById("minutesset").disabled = true;
-            document.getElementById("secondsset").disabled = true;
-
-            startLogging();
-            temp_interval = setInterval(function() {
-                if (seconds != 0 || minutes != 0) {
-                    if (seconds != 0) {
-                        seconds -= 1;
-                    } else {
-                        minutes -= 1;
-                        seconds = 59;
-                    }
-                }
-
-                var remaining = 60 * minutes + seconds;
-                document.getElementById("minutes").innerText = minutes; 
-                document.getElementById("seconds").innerText = seconds;
-                if (remaining == 0) {
-                    stopLogging(false)
-                    clearInterval(temp_interval);
-                    document.getElementById("minutesset").disabled = false;
-                    document.getElementById("secondsset").disabled = false;
-                }
-            }, 1000);
-        }
-
-        function startLogging() {
+            if (document.getElementById("toggleTimer").checked) {
+                document.getElementById("minutesset").disabled = true;
+                document.getElementById("secondsset").disabled = true;
+            }
             document.getElementById("start").disabled = true;
             document.getElementById("end").disabled = false;
 
@@ -393,6 +436,29 @@
             }
             xhttp.open("POST", "/start", true);
             xhttp.send( document.getElementById("filename").value);
+
+            if (document.getElementById("toggleTimer").checked) {
+                temp_interval = setInterval(function() {
+                    if (seconds != 0 || minutes != 0) {
+                        if (seconds != 0) {
+                            seconds -= 1;
+                        } else {
+                            minutes -= 1;
+                            seconds = 59;
+                        }
+                    }
+
+                    var remaining = 60 * minutes + seconds;
+                    document.getElementById("minutes").innerText = String(minutes).padStart(2, '0');; 
+                    document.getElementById("seconds").innerText = String(seconds).padStart(2, '0');;
+                    if (remaining == 0) {
+                        stopLogging(false)
+                        clearInterval(temp_interval);
+                        document.getElementById("minutesset").disabled = false;
+                        document.getElementById("secondsset").disabled = false;
+                    }
+                }, 1000);
+            }
         }
 
         function stopLogging(redirect) {
@@ -471,7 +537,7 @@
                                 rangemode: "nonnegative"
                             },
                             yaxis: {
-                                title: "CPM",
+                                title: "Pico Watts",
                                 zeroline: false,
                                 showgrid: false,
                                 showline: true,
@@ -479,7 +545,7 @@
                                 rangemode: "tozero"
                             }
                         }
-                    if (!mode_ratemeter) {
+                    if (mode_ionizing && !mode_ratemeter) {
                         document.getElementById("scale").innerText = scaler_counts[scaler_counts.length-1];
                         
                         
@@ -503,7 +569,7 @@
 
                             var cpm_trace = {
                                 x: x_vals,
-                                y: cpm_fast,
+                                y: counts,
                                 type: 'lines+markers',
                                 name: 'CPM Fast',
                                 marker: {
@@ -516,7 +582,7 @@
 
                             if (counts.length == 60) {
                                 //Plotly.newPlot("graph", [counts_trace, cpm_trace, cpm_true]);
-                                Plotly.newPlot("graph", [cpm_trace, cpm_true], layout);
+                                Plotly.newPlot("graph", [cpm_trace], layout);
                             } else {
                                 //Plotly.newPlot("graph", [counts_trace, cpm_trace]);
                                 Plotly.newPlot("graph", [cpm_trace], layout);

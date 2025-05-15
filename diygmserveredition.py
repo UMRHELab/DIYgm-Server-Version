@@ -2,7 +2,7 @@
 #DIYgm code adapted from code from Lukas which was adapted from code by
 #James Seekamp, Jeffery Xiao, Issa El-Amir, Regina Tuey, Max Li, Andrew Kent
 
-#Aug 12. 2022
+#Feb 27. 2025
 
 from code import compile_command
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -11,54 +11,44 @@ import threading
 import signal
 import sys
 from unicodedata import name
-import pigpio
+import random
 import os
 import datetime
 import ssl
 import zipfile
 import zlib
+import subprocess
 
-host = "192.168.4.1"
-port = 8080
+DEBUG = True
 
-# Pins
-pi = pigpio.pi()
+host = "localhost"
+port = 443
 
 PWM_GPIO = 18 # reg edition make sure to use a PWM pin (check RPi datasheet)
 #PWM_GPIO = 13 # this is for diygm rws lite edition
 MEAS_GPIO = 21
 PULLUP_GPIO = 12
 
+mode_ionizing = True
+router = ""
+ADAPTER = "wlan0"
+
+# Pins
+if not DEBUG:
+    import pigpio
+    pi = pigpio.pi()
+
+    # PWM Pin
+    pi.hardware_PWM(PWM_GPIO, 1000, 100000) # Set the frequency and instantiate PWM control on pin
+
+    # Measurement Pullup Pin
+    pi.write(PULLUP_GPIO, 1)
+
 global filename
 filename = ""
 
-# Disables error message
-#GPIO.setwarnings(False)
-
-# PWM Pin
-pi.hardware_PWM(PWM_GPIO, 1000, 100000) # Set the frequency and instantiate PWM control on pin
-
-# random number generation
-randnum = 0
-last_rand = 0
-
-# Measurement Pullup Pin
-pi.write(PULLUP_GPIO, 1)
-
 # Preventing race conditions
 lock = threading.Lock()
-
-'''
-def runrand():
-    while True:
-        lock.acquire()
-        if randnum == 10:
-            randnum = 0
-        else:
-            randnum += 1
-        lock.release()
-        time.sleep(.1)
-'''
 
 # This method is called every second and handles the pushing and popping for the cpm lists
 # this runs on a separate thread
@@ -72,6 +62,29 @@ def reset():
         global fast_min
         global slow_min 
         global count_min
+
+        if DEBUG:
+            counts = random.randint(150, 175) / 100
+        if not mode_ionizing and router != "":
+            result = subprocess.run(['sudo', 'iw', ADAPTER, 'scan'], stdout=subprocess.PIPE).stdout.decode('utf-8')
+            for ssid in result.split("BSS"):
+                if ADAPTER in ssid:
+                    signals = ssid.split('\n')
+                    signals = [i for i in signals if 'signal' in i or 'SSID' in i]
+                    i = 0
+                    while i < len(signals):
+                        name = signals[i+1][6:].strip()
+                        if name == router:
+                            # this is in -dBm, we want in mW
+                            strength = signals[i][8:-3]
+                            strength = float(strength)
+
+                            # dBm = 10*log(power mW)
+                            strength = 10**(strength/10)
+                            counts = strength
+                        i = i + 2
+        elif not mode_ionizing:
+            counts = 0
 
         # cpm fast averages over 4 seconds, so make only four values in the array
         if len(cpm_fast) < 4:
@@ -341,6 +354,18 @@ class Server(BaseHTTPRequestHandler):
             frequency = int(self.data_string[1])
 
             pi.hardware_PWM(PWM_GPIO, frequency, duty_cycle * 10000) # Set the frequency and instantiate PWM control on pin
+        elif self.path == "/ionizing":
+            mode_ionizing = True
+
+            self.send_response(200) 
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+        elif self.path == "/wifi":
+            mode_ionizing = False
+
+            self.send_response(200) 
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
         else: 
             global last_lat
             global last_lon
@@ -408,7 +433,8 @@ if __name__=="__main__":
         os.mkdir(dir)
 
     # sets interrupt for measurement pin
-    pi.callback(MEAS_GPIO, pigpio.FALLING_EDGE, detection_callback)
+    if not DEBUG:
+        pi.callback(MEAS_GPIO, pigpio.FALLING_EDGE, detection_callback)
 
     # create thread to handle cpm lists
     t = threading.Thread(target=reset, daemon=True)
@@ -418,10 +444,15 @@ if __name__=="__main__":
     webServer = HTTPServer((host, port), Server)
 
     # this needs to be exist to handle communication over https so location can be access
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile='forgedcert.pem', keyfile='forgedkey.pem') 
+    webServer.socket = context.wrap_socket(webServer.socket, server_side=True)
+
+    '''
     webServer.socket = ssl.wrap_socket(webServer.socket,
                                         keyfile="forgedkey.pem",
                                         certfile="forgedcert.pem", server_side=True)
-
+    '''
     webServer.serve_forever()
 
     t.stop()
